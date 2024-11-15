@@ -2,7 +2,7 @@
 import React from "react";
 import UploadCSV from "./components/UploadCSV";
 import ConnectGoogleSheet from "./components/ConnectGoogleSheet";
-import "./styles.css";
+// import "./styles.css";
 
 const App = () => {
   return (
