@@ -3,9 +3,15 @@ const multer = require("multer");
 const csv = require("csv-parser");
 const fs = require("fs");
 const nodemailer = require("nodemailer");
+const mailgun = require("mailgun-js");
 const Email = require("../models/emailModel"); // Import the Email model
 
 const upload = multer({ dest: "uploads/" });
+
+const mg = mailgun({
+  apiKey: process.env.MAILGUN_API_KEY,
+  domain: process.env.MAILGUN_DOMAIN,
+});
 
 exports.uploadCSV = (req, res) => {
   const results = [];
@@ -24,88 +30,79 @@ exports.uploadCSV = (req, res) => {
     });
 };
 
-// Function to send a single email
-const sendEmail = async (email) => {
-  const transporter = nodemailer.createTransport({
-    service: "gmail", // Use your email service
-    auth: {
-      user: process.env.EMAIL_USER, // Your email
-      pass: process.env.EMAIL_PASS, // Your email password
-    },
-  });
+exports.mailgunWebhook = async (req, res) => {
+  const eventData = req.body;
 
-  const mailOptions = {
-    from: process.env.EMAIL_USER,
-    to: email.recipient_email,
-    subject: email.subject,
-    text: email.body,
-  };
+  // Check if the event is an 'opened' event
+  if (eventData.event === "opened") {
+    const emailId = eventData["recipient"];
 
-  try {
-    await transporter.sendMail(mailOptions);
-    console.log(`Email sent to ${email.recipient_email}`);
-    email.status = "sent";
-  } catch (error) {
-    console.error(`Error sending email to ${email.recipient_email}:`, error);
-    email.status = "failed";
-  }
-
-  await email.save();
-};
-
-// Function to schedule emails
-exports.scheduleEmails = async (emailData, throttleRate) => {
-  const scheduledEmails = emailData.map((email) => {
-    const newEmail = new Email({
-      recipient_email: email.to,
-      subject: `Hello, ${email.firstName}`,
-      body: email.body,
-      scheduled_time: new Date(email.scheduled_time), // assuming scheduled_time comes from CSV
-      status: "pending",
-    });
-    return newEmail;
-  });
-
-  for (const email of scheduledEmails) {
-    await email.save(); // Save the email to the database
-    const delay = email.scheduled_time.getTime() - Date.now(); // Calculate delay
-
-    if (delay > 0) {
-      // Schedule the email to be sent after the delay
-      setTimeout(() => sendEmail(email), delay);
-    } else {
-      // If the scheduled time is in the past, send immediately
-      await sendEmail(email);
+    try {
+      // Update the email record in the database to mark it as opened
+      await Email.updateOne({ recipient_email: emailId }, { opened: true });
+      console.log(`Email opened by: ${emailId}`);
+    } catch (error) {
+      console.error("Error updating email open status:", error);
     }
   }
 
-  // Throttling logic
-  if (throttleRate) {
-    const interval = (60 * 1000) / throttleRate; // Convert rate to milliseconds
-    let index = 0;
-
-    const sendNextEmail = () => {
-      if (index < scheduledEmails.length) {
-        sendEmail(scheduledEmails[index]);
-        index++;
-        setTimeout(sendNextEmail, interval); // Schedule the next email
-      }
-    };
-
-    sendNextEmail(); // Start sending emails
-  }
+  // Respond to Mailgun
+  res.status(200).send("Webhook received");
 };
 
-// Update sendEmails to accept emailData and generatedMessages
-exports.sendEmails = async (emailData, generatedMessages, throttleRate) => {
-  const emailsToSend = emailData.map((email, index) => ({
-    to: email.to, // Assuming 'to' is a field in your CSV
-    firstName: email.firstName,
-    body: generatedMessages[index] || "Default message", // Use generated message or default
-  }));
+///////////////////////////////////////////////// Function to schedule emails  //////////////////////////////////////////////////
+// exports.scheduleEmails = async (emailData, throttleRate) => {
+//   const scheduledEmails = emailData.map((email) => {
+//     const newEmail = new Email({
+//       recipient_email: email.to,
+//       subject: `Hello, ${email.firstName}`,
+//       body: email.body,
+//       scheduled_time: new Date(email.scheduled_time), // assuming scheduled_time comes from CSV
+//       status: "pending",
+//     });
+//     return newEmail;
+//   });
 
-  await this.scheduleEmails(emailsToSend, throttleRate); // Call scheduleEmails with throttle rate
-};
+//   for (const email of scheduledEmails) {
+//     await email.save(); // Save the email to the database
+//     const delay = email.scheduled_time.getTime() - Date.now(); // Calculate delay
+
+//     if (delay > 0) {
+//       // Schedule the email to be sent after the delay
+//       setTimeout(() => sendEmail(email), delay);
+//     } else {
+//       // If the scheduled time is in the past, send immediately
+//       await sendEmail(email);
+//     }
+//   }
+
+//   // Throttling logic
+//   if (throttleRate) {
+//     const interval = (60 * 1000) / throttleRate; // Convert rate to milliseconds
+//     let index = 0;
+
+//     const sendNextEmail = () => {
+//       if (index < scheduledEmails.length) {
+//         sendEmail(scheduledEmails[index]);
+//         index++;
+//         setTimeout(sendNextEmail, interval); // Schedule the next email
+//       }
+//     };
+
+//     sendNextEmail(); // Start sending emails
+//   }
+// };
+
+// // Update sendEmails to accept emailData and generatedMessages
+// exports.sendEmails = async (emailData, generatedMessages, throttleRate) => {
+//   const emailsToSend = emailData.map((email, index) => ({
+//     to: email.to, // Assuming 'to' is a field in your CSV
+//     firstName: email.firstName,
+//     body: generatedMessages[index] || "Default message", // Use generated message or default
+//   }));
+
+//   await this.scheduleEmails(emailsToSend, throttleRate); // Call scheduleEmails with throttle rate
+// };
 
 /////////////////////////////////////// 2nd VERSION //////////////////////////////////////////////////////
 
@@ -167,6 +164,8 @@ exports.sendEmails = async (emailData, generatedMessages, throttleRate) => {
 //   await scheduleEmails(emailsToSend); // Call the scheduling function
 // };
 
+//////
+
 ///////////////////////////////// OLD ONE /////////////////////////////////////////////////////////////////
 
 // Update sendEmails to accept emailData and generatedMessages
@@ -214,3 +213,59 @@ exports.sendEmails = async (emailData, generatedMessages, throttleRate) => {
 //     await newEmail.save();
 //   }
 // };
+
+///////////////////////////////// MAINGUN ONE /////////////////////////////////////////////////////////////////
+exports.sendEmails = async (emailData, generatedMessages) => {
+  for (let i = 0; i < emailData.length; i++) {
+    const email = emailData[i];
+    const messageBody = generatedMessages[i] || "Default message"; // Use generated message or default
+
+    const mailOptions = {
+      from: process.env.MAILGUN_FROM, // Your Mailgun verified sending email
+      // to: email.recipient_email,
+      to: email.to,
+      subject: email.subject,
+      text: messageBody, // Use the generated message as the body
+      "o:tracking": "yes", // Enable open tracking
+      "o:tracking-clicks": "yes", // Optional: Enable click tracking
+    };
+
+    try {
+      const response = await mg.messages().send(mailOptions);
+      console.log(`Email sent to ${email.to}`);
+
+      // Update email status in the database
+      await Email.create({
+        recipient_email: email.to,
+        subject: email.subject,
+        body: messageBody, // Store the generated message in the body
+        status: "sent", // Update status to delivered
+        delivery_status: "delivered", // Capture the response message
+        opened: false, // Set opened status to false initially
+        created_at: email.created_at,
+        companyName: email.companyName,
+        firstName: email.firstName,
+        lastName: email.lastName,
+        location: email.location,
+        products: email.products,
+      });
+    } catch (error) {
+      console.error(`Error sending email to ${email.to}:`, error);
+      // Update email status in the database
+      await Email.create({
+        recipient_email: email.to,
+        subject: email.subject,
+        body: messageBody, // Store the generated message in the body
+        status: "failed", // Update status to failed
+        delivery_status: "bounced",
+        opened: false,
+        created_at: email.created_at,
+        companyName: email.companyName,
+        firstName: email.firstName,
+        lastName: email.lastName,
+        location: email.location,
+        products: email.products,
+      });
+    }
+  }
+};

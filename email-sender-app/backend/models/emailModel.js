@@ -7,7 +7,14 @@ const emailSchema = new mongoose.Schema({
   body: { type: String },
   scheduled_time: { type: Date },
   status: { type: String, default: "pending" },
+  delivery_status: { type: String, default: "pending" }, // "delivered", "opened", "bounced"
+  opened: { type: Boolean, default: false }, // Track if the email was opened
   created_at: { type: Date, default: Date.now },
+  companyName: { type: String }, 
+  firstName: { type: String }, 
+  lastName: { type: String }, 
+  location: { type: String }, 
+  products: { type: [String] }
 });
 
 const Email = mongoose.model("Email", emailSchema);
