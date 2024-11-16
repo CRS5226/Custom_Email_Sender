@@ -1,4 +1,6 @@
 // frontend/src/components/UploadCSV.js
+
+
 // import React, { useState } from "react";
 // import axios from "axios";
 
@@ -203,17 +205,17 @@
 //       <input type="file" accept=".csv" onChange={handleFileChange} />
 //       <button onClick={handleUpload}>Upload CSV</button>
 
-//       {/* Display Uploaded Data */}
-//       {data.length > 0 && (
-//         <div>
-//           <h3>Uploaded Data:</h3>
-//           <ul>
-//             {data.map((row, index) => (
-//               <li key={index}>{JSON.stringify(row)}</li>
-//             ))}
-//           </ul>
-//         </div>
-//       )}
+// {/* Display Uploaded Data */}
+// {data.length > 0 && (
+//   <div>
+//     <h3>Uploaded Data:</h3>
+//     <ul>
+//       {data.map((row, index) => (
+//         <li key={index}>{JSON.stringify(row)}</li>
+//       ))}
+//     </ul>
+//   </div>
+// )}
 
 //       {/* Prompt Box for customizable prompt */}
 //       <div>
@@ -256,6 +258,7 @@ const UploadCSV = () => {
   const [prompt, setPrompt] = useState(""); // State to hold the customizable prompt
   const [generatedMessages, setGeneratedMessages] = useState([]); // State to hold generated messages
   const [sendStatus, setSendStatus] = useState(""); // State to hold the status of email sending
+  const [scheduleTime, setScheduleTime] = useState(""); // State to hold the schedule time
 
   const handleFileChange = (e) => {
     setFile(e.target.files[0]);
@@ -291,7 +294,7 @@ const UploadCSV = () => {
         const placeholder = `{${key}}`;
         messagePrompt = messagePrompt.replace(
           new RegExp(placeholder, "g"),
-          row[key] || '' // Fill with empty string if the value is undefined
+          row[key] || "" // Fill with empty string if the value is undefined
         );
       }
 
@@ -317,20 +320,49 @@ const UploadCSV = () => {
   const handleSendEmails = async () => {
     try {
       // Prepare the data to send to the backend
-      const emailData = data.map((row, index) => ({
-        to: row.email, // Assuming 'email' is a field in your CSV
+      const emailData = data.map((row) => ({
+        to: row.recipient_email, // Assuming 'email' is a field in your CSV
         firstName: row.firstName, // Assuming 'firstName' is a field in your CSV
         lastName: row.lastName, // Assuming 'lastName' is a field in your CSV
+        scheduled_time: new Date(scheduleTime), // Schedule time for sending
+        companyName: row.companyName,
+        products: row.products,
       }));
 
-      console.log(emailData)
-  
+      console.log(emailData);
+
       // Send the email data and generated messages to the backend
       const response = await axios.post(
         "http://localhost:5000/api/emails/send",
         { emailData, generatedMessages }
       );
-  
+
+      // Update the status of each email to "sent"
+      // const updatedData = data.map((row) => ({
+      //   ...row,
+      //   status: "sent", // Change status to "sent"
+      //   delivery_status: "pending", // Include delivery status
+      //   opened: false, // Include opened status
+      // }));
+      // setData(updatedData);
+      // setSendStatus("Emails sent successfully!");
+
+      const updatedEmailsResponse = await axios.get(
+        "http://localhost:5000/api/emails/status"
+      );
+      
+      // console.log("email data", updatedEmailsResponse.data);
+      // console.log("delivery data", updatedEmailsResponse.data.delivery_status);
+
+      // const updatedData = data.map((row) => ({
+      //   ...row,
+      //   status: updatedEmailsResponse.data.status, // Change status to "sent"
+      //   delivery_status: updatedEmailsResponse.data.delivery_status, // Include delivery status
+      //   opened: updatedEmailsResponse.data.opened, // Include opened status
+      // }));
+
+      setData(updatedEmailsResponse.data); // Update the state with the latest email statuses
+      // setData(updatedData);
       setSendStatus("Emails sent successfully!");
       console.log(response.data);
     } catch (error) {
@@ -341,11 +373,33 @@ const UploadCSV = () => {
     }
   };
 
+  // const handleTrackOpen = async (emailId) => {
+  //   try {
+  //     // Call the tracking endpoint with the email ID
+  //     await axios.post(
+  //       `http://localhost:5000/api/emails/track-open?emailId=${emailId}`
+  //     );
+  //     console.log(`Email with ID ${emailId} marked as opened.`);
+  //   } catch (error) {
+  //     console.error("Error tracking email open:", error);
+  //   }
+  // };
+
   return (
     <div>
       <h2>Upload Email Data</h2>
       <input type="file" accept=".csv" onChange={handleFileChange} />
       <button onClick={handleUpload}>Upload CSV</button>
+
+      {/* Input for Schedule Time */}
+      <div>
+        <h3>Schedule Time for Sending Emails:</h3>
+        <input
+          type="datetime-local"
+          value={scheduleTime}
+          onChange={(e) => setScheduleTime(e.target.value)}
+        />
+      </div>
 
       {/* Display Uploaded Data */}
       {data.length > 0 && (
@@ -353,11 +407,41 @@ const UploadCSV = () => {
           <h3>Uploaded Data:</h3>
           <ul>
             {data.map((row, index) => (
-              <li key={index }>
-                {JSON.stringify(row)}
-              </li>
+              <li key={index}>{JSON.stringify(row)}</li>
             ))}
           </ul>
+        </div>
+      )}
+
+      {/* Display dashboard */}
+      {data.length > 0 && (
+        <div>
+          <h3>Dashboard</h3>
+          <table>
+            <thead>
+              <tr>
+                <th>Company Name</th>
+                <th>Email</th>
+                <th>Status</th>
+                <th>Delivery Status</th>
+                <th>Opened</th>
+              </tr>
+            </thead>
+            <tbody>
+              {data.map((row, index) => (
+                <tr key={index}>
+                  <td>{row.companyName || "N /A"}</td>
+                  <td>{row.recipient_email || "N /A"} </td>
+                  <td>{row.status || "pending"}</td>
+                  <td>{row.delivery_status || "N/A"}</td>
+                  <td>{row.opened ? "Yes" : "No"}</td>
+                  {/* <td>
+                    <button onClick={() => handleTrackOpen(row.email)}>Track Open</button>
+                  </td> */}
+                </tr>
+              ))}
+            </tbody>
+          </table>
         </div>
       )}
 
@@ -382,9 +466,12 @@ const UploadCSV = () => {
           <ul>
             {generatedMessages.map((message, index) => (
               <li key={index}>
-                <strong>Message for {data[index]?.firstName || 'Recipient'}:</strong>
-                <div style={{ whiteSpace: "pre-wrap", marginTop: "5px" }}>{message}</div>
-                {/* Preserve formatting and add some margin for better readability */}
+                <strong>
+                  Message for {data[index]?.firstName || "Recipient"}:
+                </strong>
+                <div style={{ whiteSpace: "pre-wrap", marginTop: "5px" }}>
+                  {message}
+                </div>
               </li>
             ))}
           </ul>
