@@ -5,7 +5,7 @@ import ConnectGoogleSheet from "./components/ConnectGoogleSheet";
 import ScheduleEmail from "./components/ScheduleEmail";
 import Dashboard from './components/Dashboard'; // Import the Dashboard component
 import AnalyticsDashboard from "./components/AnalyticsDashboard"; // Import the dashboard
-
+import './App.css';
 
 // import "./styles.css";
 
